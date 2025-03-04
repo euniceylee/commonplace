@@ -225,7 +225,7 @@
         <p class="subtitle">2022–Present</p>
         <p class="author">Eunice Lee</p>
         <div class="description">
-            <p>Since 2022, I've been collecting quotes—words that resonate, challenge, or help me make sense of the world. The practice of keeping a commonplace book is one that has been around for centuries – from Renaissance writers to 17th century students. Many have used this tradition to hold onto words that matter, and in that same spirit, my commonplace book is an ongoing record of my thoughts over time.</p>
+            <p>The practice of keeping a commonplace book is one that has been around for centuries – from Renaissance writers to 17th century students. Many have used this tradition to hold onto words that matter, and in that same spirit, my commonplace book is an ongoing record of my thoughts over time. </p>
         </div>
     </header>
     
@@ -252,12 +252,11 @@
         // Your personal commonplace book quotes
         const quotes = [
             {
-                "text": "And now, looking back, I realize that quitting, moving, starting over, again and again until I was happy is the greatest gift I've ever given myself.",
-                "author": "Caroline Beuley",
-                "source": "https://fairytalesbycaroline.substack.com/p/between-plath-and-didion-the-most",
+                "text": "If we let ourselves, we shall always be waiting for some distraction or other to end before we can really get down to our work. The only people who achieve much are those who want knowledge so badly that they seek it while the conditions are still unfavorable. Favorable conditions never come.",
+                "author": "C.S. Lewis",
+                "source": "",
                 "categories": [
-                    "creativity",
-                    "personal-growth"
+                    "philosophy",
                 ]
             },
             {
@@ -604,4 +603,69 @@
                 ]
             },
             {
-                "
+                // "
+
+                    // Function to render quotes
+function renderQuotes(filteredQuotes) {
+    const quotesContainer = document.getElementById('quotes-container');
+    quotesContainer.innerHTML = '';
+    
+    filteredQuotes.forEach(quote => {
+        const quoteCard = document.createElement('div');
+        quoteCard.classList.add('quote-card');
+        quoteCard.style.opacity = '1'; // Make sure quotes are visible
+        
+        let categoriesHTML = '';
+        quote.categories.forEach(category => {
+            categoriesHTML += `<span class="quote-category">${formatCategoryName(category)}</span>`;
+        });
+        
+        quoteCard.innerHTML = `
+            <div class="quote-text">${quote.text}</div>
+            <div class="quote-author">${quote.author}</div>
+            ${quote.source ? `<div class="quote-source">${quote.source}</div>` : ''}
+            <div class="quote-categories">${categoriesHTML}</div>
+        `;
+        
+        quotesContainer.appendChild(quoteCard);
+    });
+}
+
+// Format category name (e.g., personal-growth -> Personal Growth)
+function formatCategoryName(category) {
+    return category.split('-')
+        .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(' ');
+}
+
+// Filter quotes by category
+function filterQuotes(category) {
+    if (category === 'all') {
+        return quotes;
+    } else {
+        return quotes.filter(quote => quote.categories.includes(category));
+    }
+}
+
+// Event listeners for filter buttons
+document.querySelectorAll('.filter-btn').forEach(button => {
+    button.addEventListener('click', () => {
+        // Remove active class from all buttons
+        document.querySelectorAll('.filter-btn').forEach(btn => {
+            btn.classList.remove('active');
+        });
+        
+        // Add active class to clicked button
+        button.classList.add('active');
+        
+        // Get category and filter quotes
+        const category = button.getAttribute('data-category');
+        const filteredQuotes = filterQuotes(category);
+        
+        // Render filtered quotes
+        renderQuotes(filteredQuotes);
+    });
+});
+
+// Initial render with all quotes
+renderQuotes(quotes);
