@@ -1,7 +1,7 @@
 // Constants
 const SPREADSHEET_ID = '18jdz4GGssAmEoC_JVdlqAGUrDPTrY27ahsVGISHerTY';
 const SHEET_NAME = '1841035861'; // This is the gid from your URL
-const API_URL = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=out:json&sheet=${SHEET_NAME}`;
+const API_URL = `https://docs.google.com/spreadsheets/d/e/2PACX-1vSnckR1nLaR9Hbv7iprq4AI8zCGH19m076LWaNzvN8wx8EjwaBRQfsCvchExW2u9j34XveYF-RA2i97/gviz/tq?tqx=out:json&sheet=${Sheet 1}`;
 
 // Function to fetch quotes from Google Sheets
 async function fetchQuotes() {
