@@ -1,40 +1,19 @@
 // Constants
-const SPREADSHEET_ID = '18jdz4GGssAmEoC_JVdlqAGUrDPTrY27ahsVGISHerTY';
-const SHEET_NAME = '1841035861'; // This is the gid from your URL
+const PUBLISHED_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSnckR1nLaR9Hbv7iprq4AI8zCGH19m076LWaNzvN8wx8EjwaBRQfsCvchExW2u9j34XveYF-RA2i97/pub?output=csv';
 
-// Using the direct visualization API URL format
-const API_URL = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=out:json&gid=${SHEET_NAME}`;
-
-// Function to fetch quotes from Google Sheets
+// Function to fetch quotes from Google Sheets (Published CSV method)
 async function fetchQuotes() {
     try {
         // Show loading state
         const quotesContainer = document.getElementById('quotes-container');
         quotesContainer.innerHTML = '<p class="loading">Loading quotes...</p>';
         
-        // Fetch data from Google Sheets
-        const response = await fetch(API_URL);
-        const text = await response.text();
+        // Fetch data from published Google Sheets CSV
+        const response = await fetch(PUBLISHED_CSV_URL);
+        const csvText = await response.text();
         
-        // Google's response comes with a prefix we need to remove to get valid JSON
-        // The prefix is usually like "/*O_o*/\ngoogle.visualization.Query.setResponse("
-        // and it ends with ");"
-        const jsonStart = text.indexOf('{');
-        const jsonEnd = text.lastIndexOf('}') + 1;
-        
-        // Check if we've found valid JSON positions
-        if (jsonStart < 0 || jsonEnd <= jsonStart) {
-            throw new Error("Couldn't extract JSON from response: " + text.substring(0, 100) + "...");
-        }
-        
-        const jsonText = text.substring(jsonStart, jsonEnd);
-        const data = JSON.parse(jsonText);
-        
-        // Debug for response
-        console.log("Parsed data structure:", data);
-        
-        // Process the data into our quotes format
-        const quotes = processSheetData(data);
+        // Parse CSV
+        const quotes = parseCSV(csvText);
         
         // Update the UI with the quotes
         displayQuotes(quotes);
@@ -67,65 +46,82 @@ async function fetchQuotes() {
     }
 }
 
-// Process the sheet data into our quotes format
-function processSheetData(data) {
-    const quotes = [];
+// CSV parser function
+function parseCSV(text) {
+    const lines = text.split('\n');
+    const headers = lines[0].split(',').map(header => header.trim());
     
-    // Check if we have the expected structure
-    if (!data.table || !data.table.cols || !data.table.rows) {
-        console.error("Unexpected data structure:", data);
-        return quotes;
-    }
-    
-    // Get the column names from the first row
-    const columns = data.table.cols.map(col => col.label);
-    console.log("Columns found:", columns);
-    
-    // Map spreadsheet columns to our quote object properties
-    const columnMap = {
-        quote: columns.indexOf('Quote'),
-        source: columns.indexOf('Source'),
-        author: columns.indexOf('Author'),
-        tags: columns.indexOf('Tags')
+    // Find column indices (case-insensitive search)
+    const findColumnIndex = (name) => {
+        return headers.findIndex(h => h.toLowerCase() === name.toLowerCase());
     };
     
-    // Log the column mapping for debugging
-    console.log("Column mapping:", columnMap);
+    const quoteIndex = findColumnIndex('quote');
+    const authorIndex = findColumnIndex('author');
+    const sourceIndex = findColumnIndex('source');
+    const tagsIndex = findColumnIndex('tags');
     
-    // Check if we found the required columns
-    if (columnMap.quote === -1) {
-        console.error("Required 'Quote' column not found");
-        return quotes;
-    }
+    console.log("CSV Headers:", headers);
+    console.log("Column indices:", { quoteIndex, authorIndex, sourceIndex, tagsIndex });
     
-    // Process each row into a quote object
-    data.table.rows.forEach((row, index) => {
-        const cells = row.c;
+    const quotes = [];
+    
+    // Start from index 1 to skip headers
+    for (let i = 1; i < lines.length; i++) {
+        if (!lines[i].trim()) continue;
         
-        // Skip rows with empty quotes or if the cells don't match our expectations
-        if (!cells || !cells[columnMap.quote] || !cells[columnMap.quote].v) {
-            return;
+        // Handle cases where commas might be inside quoted values
+        const values = parseCSVLine(lines[i]);
+        
+        if (quoteIndex >= 0 && values[quoteIndex] && values[quoteIndex].trim()) {
+            quotes.push({
+                text: values[quoteIndex]?.trim() || '',
+                author: authorIndex >= 0 && values[authorIndex] ? values[authorIndex].trim() : '',
+                source: sourceIndex >= 0 && values[sourceIndex] ? values[sourceIndex].trim() : '',
+                tags: tagsIndex >= 0 && values[tagsIndex] && values[tagsIndex].trim()
+                    ? values[tagsIndex].split(',').map(tag => tag.trim())
+                    : []
+            });
         }
-        
-        quotes.push({
-            text: cells[columnMap.quote].v,
-            source: columnMap.source !== -1 && cells[columnMap.source] ? cells[columnMap.source].v : '',
-            author: columnMap.author !== -1 && cells[columnMap.author] ? cells[columnMap.author].v : '',
-            tags: columnMap.tags !== -1 && cells[columnMap.tags] && cells[columnMap.tags].v 
-                ? cells[columnMap.tags].v.split(',').map(tag => tag.trim()) 
-                : []
-        });
-    });
+    }
     
     console.log(`Processed ${quotes.length} quotes`);
     return quotes;
+}
+
+// Helper function to correctly parse CSV line with quoted values
+function parseCSVLine(line) {
+    const values = [];
+    let inQuote = false;
+    let currentValue = '';
+    
+    for (let j = 0; j < line.length; j++) {
+        const char = line[j];
+        
+        if (char === '"') {
+            // If we encounter a double quote, toggle the quote flag
+            inQuote = !inQuote;
+        } else if (char === ',' && !inQuote) {
+            // If we encounter a comma and we're not inside quotes, end the current value
+            values.push(currentValue);
+            currentValue = '';
+        } else {
+            // Otherwise, add the character to the current value
+            currentValue += char;
+        }
+    }
+    
+    // Don't forget to add the last value
+    values.push(currentValue);
+    
+    return values;
 }
 
 // Display all quotes in the UI
 function displayQuotes(quotes, category = 'all') {
     const quotesContainer = document.getElementById('quotes-container');
     
-    if (quotes.length === 0) {
+    if (!quotes || quotes.length === 0) {
         quotesContainer.innerHTML = 
             '<p class="error">No quotes found. Please add some to your spreadsheet.</p>';
         return;
