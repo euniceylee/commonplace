@@ -1,24 +1,37 @@
 // Constants
 const SPREADSHEET_ID = '18jdz4GGssAmEoC_JVdlqAGUrDPTrY27ahsVGISHerTY';
 const SHEET_NAME = '1841035861'; // This is the gid from your URL
-const API_URL = `https://docs.google.com/spreadsheets/d/e/2PACX-1vSnckR1nLaR9Hbv7iprq4AI8zCGH19m076LWaNzvN8wx8EjwaBRQfsCvchExW2u9j34XveYF-RA2i97/gviz/tq?tqx=out:json&sheet=${Sheet 1}`;
+
+// Using the direct visualization API URL format
+const API_URL = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=out:json&gid=${SHEET_NAME}`;
 
 // Function to fetch quotes from Google Sheets
 async function fetchQuotes() {
     try {
         // Show loading state
-        const quoteContainer = document.getElementById('quote-container');
-        quoteContainer.innerHTML = '<p class="loading">Loading quotes...</p>';
+        const quotesContainer = document.getElementById('quotes-container');
+        quotesContainer.innerHTML = '<p class="loading">Loading quotes...</p>';
         
         // Fetch data from Google Sheets
         const response = await fetch(API_URL);
         const text = await response.text();
         
         // Google's response comes with a prefix we need to remove to get valid JSON
-        // The prefix is usually "/*O_o*/\ngoogle.visualization.Query.setResponse("
+        // The prefix is usually like "/*O_o*/\ngoogle.visualization.Query.setResponse("
         // and it ends with ");"
-        const jsonText = text.substring(text.indexOf('{'), text.lastIndexOf('}') + 1);
+        const jsonStart = text.indexOf('{');
+        const jsonEnd = text.lastIndexOf('}') + 1;
+        
+        // Check if we've found valid JSON positions
+        if (jsonStart < 0 || jsonEnd <= jsonStart) {
+            throw new Error("Couldn't extract JSON from response: " + text.substring(0, 100) + "...");
+        }
+        
+        const jsonText = text.substring(jsonStart, jsonEnd);
         const data = JSON.parse(jsonText);
+        
+        // Debug for response
+        console.log("Parsed data structure:", data);
         
         // Process the data into our quotes format
         const quotes = processSheetData(data);
@@ -26,8 +39,8 @@ async function fetchQuotes() {
         // Update the UI with the quotes
         displayQuotes(quotes);
         
-        // Initialize the quote rotation
-        setupQuoteRotation(quotes);
+        // Set up category filters
+        setupCategoryFilters();
         
         // Cache the quotes in localStorage for faster loading next time
         localStorage.setItem('quotes', JSON.stringify(quotes));
@@ -42,13 +55,13 @@ async function fetchQuotes() {
         if (cachedQuotes) {
             const quotes = JSON.parse(cachedQuotes);
             displayQuotes(quotes);
-            setupQuoteRotation(quotes);
+            setupCategoryFilters();
             return quotes;
         }
         
         // If all else fails, show an error message
-        document.getElementById('quote-container').innerHTML = 
-            '<p class="error">Could not load quotes. Please try again later.</p>';
+        document.getElementById('quotes-container').innerHTML = 
+            `<p class="error">Could not load quotes. Please try again later.<br>Error: ${error.message}</p>`;
         
         return [];
     }
@@ -58,8 +71,15 @@ async function fetchQuotes() {
 function processSheetData(data) {
     const quotes = [];
     
+    // Check if we have the expected structure
+    if (!data.table || !data.table.cols || !data.table.rows) {
+        console.error("Unexpected data structure:", data);
+        return quotes;
+    }
+    
     // Get the column names from the first row
     const columns = data.table.cols.map(col => col.label);
+    console.log("Columns found:", columns);
     
     // Map spreadsheet columns to our quote object properties
     const columnMap = {
@@ -69,92 +89,108 @@ function processSheetData(data) {
         tags: columns.indexOf('Tags')
     };
     
+    // Log the column mapping for debugging
+    console.log("Column mapping:", columnMap);
+    
+    // Check if we found the required columns
+    if (columnMap.quote === -1) {
+        console.error("Required 'Quote' column not found");
+        return quotes;
+    }
+    
     // Process each row into a quote object
-    data.table.rows.forEach(row => {
+    data.table.rows.forEach((row, index) => {
         const cells = row.c;
         
-        // Skip rows with empty quotes
-        if (!cells[columnMap.quote] || !cells[columnMap.quote].v) {
+        // Skip rows with empty quotes or if the cells don't match our expectations
+        if (!cells || !cells[columnMap.quote] || !cells[columnMap.quote].v) {
             return;
         }
         
         quotes.push({
             text: cells[columnMap.quote].v,
-            source: cells[columnMap.source] ? cells[columnMap.source].v : '',
-            author: cells[columnMap.author] ? cells[columnMap.author].v : '',
-            tags: cells[columnMap.tags] && cells[columnMap.tags].v 
+            source: columnMap.source !== -1 && cells[columnMap.source] ? cells[columnMap.source].v : '',
+            author: columnMap.author !== -1 && cells[columnMap.author] ? cells[columnMap.author].v : '',
+            tags: columnMap.tags !== -1 && cells[columnMap.tags] && cells[columnMap.tags].v 
                 ? cells[columnMap.tags].v.split(',').map(tag => tag.trim()) 
                 : []
         });
     });
     
+    console.log(`Processed ${quotes.length} quotes`);
     return quotes;
 }
 
-// Display the quotes in the UI
-function displayQuotes(quotes) {
+// Display all quotes in the UI
+function displayQuotes(quotes, category = 'all') {
+    const quotesContainer = document.getElementById('quotes-container');
+    
     if (quotes.length === 0) {
-        document.getElementById('quote-container').innerHTML = 
+        quotesContainer.innerHTML = 
             '<p class="error">No quotes found. Please add some to your spreadsheet.</p>';
         return;
     }
     
-    // Display the first quote
-    displayQuote(quotes[0]);
+    // Clear the container
+    quotesContainer.innerHTML = '';
     
-    // Update the total quote count
-    document.getElementById('quote-count').textContent = `${quotes.length} quotes`;
-}
-
-// Display a single quote
-function displayQuote(quote) {
-    const quoteContainer = document.getElementById('quote-container');
+    // Filter quotes by category if needed
+    const filteredQuotes = category === 'all'
+        ? quotes
+        : quotes.filter(quote => {
+            const lowercaseTags = quote.tags.map(tag => tag.toLowerCase());
+            return lowercaseTags.includes(category.toLowerCase());
+        });
     
-    quoteContainer.innerHTML = `
-        <blockquote>
-            <p class="quote-text">${quote.text}</p>
-            <footer>
-                <cite>${quote.author}${quote.source ? `, ${quote.source}` : ''}</cite>
-            </footer>
-        </blockquote>
-    `;
-    
-    // Display tags if any
-    const tagsContainer = document.getElementById('tags-container');
-    if (tagsContainer) {
-        if (quote.tags && quote.tags.length > 0) {
-            tagsContainer.innerHTML = quote.tags.map(tag => 
-                `<span class="tag">${tag}</span>`
-            ).join('');
-            tagsContainer.style.display = 'block';
-        } else {
-            tagsContainer.style.display = 'none';
-        }
+    if (filteredQuotes.length === 0) {
+        quotesContainer.innerHTML = 
+            `<p class="error">No quotes found in the "${category}" category.</p>`;
+        return;
     }
+    
+    // Display all quotes
+    filteredQuotes.forEach((quote, index) => {
+        const quoteCard = document.createElement('div');
+        quoteCard.className = 'quote-card';
+        
+        quoteCard.innerHTML = `
+            <p class="quote-text">${quote.text}</p>
+            ${quote.author ? `<p class="quote-author">${quote.author}</p>` : ''}
+            ${quote.source ? `<p class="quote-source">${quote.source}</p>` : ''}
+            ${quote.tags && quote.tags.length > 0 ? `
+                <div class="quote-categories">
+                    ${quote.tags.map(tag => `<span class="quote-category">${tag}</span>`).join('')}
+                </div>
+            ` : ''}
+        `;
+        
+        // Add to container
+        quotesContainer.appendChild(quoteCard);
+        
+        // Animate in with a small delay for a staggered effect
+        setTimeout(() => {
+            quoteCard.style.opacity = '1';
+        }, index * 50);
+    });
 }
 
-// Set up quote rotation
-function setupQuoteRotation(quotes) {
-    let currentIndex = 0;
+// Set up category filter buttons
+function setupCategoryFilters() {
+    const filterButtons = document.querySelectorAll('.filter-btn');
+    const quotes = JSON.parse(localStorage.getItem('quotes') || '[]');
     
-    // Set up the next/previous buttons
-    document.getElementById('next-quote').addEventListener('click', () => {
-        currentIndex = (currentIndex + 1) % quotes.length;
-        displayQuote(quotes[currentIndex]);
-    });
-    
-    document.getElementById('prev-quote').addEventListener('click', () => {
-        currentIndex = (currentIndex - 1 + quotes.length) % quotes.length;
-        displayQuote(quotes[currentIndex]);
-    });
-    
-    // Optional: Add keyboard navigation
-    document.addEventListener('keydown', (event) => {
-        if (event.key === 'ArrowRight') {
-            document.getElementById('next-quote').click();
-        } else if (event.key === 'ArrowLeft') {
-            document.getElementById('prev-quote').click();
-        }
+    filterButtons.forEach(button => {
+        button.addEventListener('click', () => {
+            // Update active button
+            document.querySelector('.filter-btn.active').classList.remove('active');
+            button.classList.add('active');
+            
+            // Get selected category
+            const category = button.getAttribute('data-category');
+            
+            // Filter and display quotes
+            displayQuotes(quotes, category);
+        });
     });
 }
 
@@ -171,7 +207,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Use cached quotes if they're fresh
         const quotes = JSON.parse(cachedQuotes);
         displayQuotes(quotes);
-        setupQuoteRotation(quotes);
+        setupCategoryFilters();
         
         // Refresh in the background
         fetchQuotes();
